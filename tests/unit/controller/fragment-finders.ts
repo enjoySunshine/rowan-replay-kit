@@ -5,6 +5,7 @@ import {
   findFragmentByPDT,
   findFragmentByPTS,
   findNearestWithCC,
+  findSegmentByTime,
   fragmentWithinToleranceTest,
   pdtWithinToleranceTest,
 } from '../../../src/controller/fragment-finders';
@@ -27,6 +28,70 @@ describe('Fragment finders', function () {
   const sandbox = sinon.createSandbox();
   afterEach(function () {
     sandbox.restore();
+  });
+
+  describe('findSegmentByTime', function () {
+    const tolerance = 0.25;
+
+    it('reconciles both clocks across two 10s segments', function () {
+      expect(findSegmentByTime(9.8, 2, tolerance)).to.equal(2);
+      expect(findSegmentByTime(19.8, 2, tolerance)).to.equal(2);
+      expect(findSegmentByTime(20, 2, tolerance)).to.equal(null);
+    });
+
+    it('selects a segment across five 10s segments', function () {
+      const n = 5;
+      const expectations: Array<[number, number | null]> = [
+        [0, 1],
+        [5, 1],
+        [9.7, 1],
+        [9.74, 1],
+        [9.75, 2],
+        [9.8, 2],
+        [10, 2],
+        [19.8, 3],
+        [29.8, 4],
+        [39.8, 5],
+        [49.8, 5],
+        [50, null],
+      ];
+      expectations.forEach(([position, expected]) => {
+        expect(
+          findSegmentByTime(position, n, tolerance),
+          `findSegmentByTime(${position}, ${n})`,
+        ).to.equal(expected);
+      });
+    });
+
+    it('keeps the last segment near the end of the timeline', function () {
+      const n = 4;
+      expect(findSegmentByTime(19.8, n, tolerance)).to.equal(3);
+      expect(findSegmentByTime(29.8, n, tolerance)).to.equal(4);
+      expect(findSegmentByTime(39.8, n, tolerance)).to.equal(4);
+      expect(findSegmentByTime(40, n, tolerance)).to.equal(null);
+    });
+
+    it('returns the same segment regardless of segment count', function () {
+      // The selected sequence number at a given second must not depend on how
+      // many segments the timeline happens to contain.
+      expect(findSegmentByTime(9.8, 6, tolerance)).to.equal(2);
+      expect(findSegmentByTime(9.8, 8, tolerance)).to.equal(2);
+      expect(findSegmentByTime(79.8, 8, tolerance)).to.equal(8);
+    });
+
+    it('falls inside a segment without look-ahead at tolerance 0', function () {
+      expect(findSegmentByTime(9.8, 5, 0)).to.equal(1);
+      expect(findSegmentByTime(9.75, 5, 0)).to.equal(1);
+      expect(findSegmentByTime(10, 5, 0)).to.equal(2);
+      expect(findSegmentByTime(50, 5, 0)).to.equal(null);
+    });
+
+    it('returns null before the start and at/after the end', function () {
+      expect(findSegmentByTime(-0.01, 5, tolerance)).to.equal(null);
+      expect(findSegmentByTime(50.01, 5, tolerance)).to.equal(null);
+      expect(findSegmentByTime(Infinity, 5, tolerance)).to.equal(null);
+      expect(findSegmentByTime(NaN, 5, tolerance)).to.equal(null);
+    });
   });
 
   const fragPrevious = makeMockFragment({

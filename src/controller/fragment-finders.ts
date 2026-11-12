@@ -3,6 +3,58 @@ import type { Fragment, MediaFragment } from '../loader/fragment';
 import type { LevelDetails } from '../loader/level-details';
 
 /**
+ * Selects the 1-based segment number containing a position in a timeline made
+ * up of equal-length, back-to-back segments, reconciling the media-time
+ * ("film seconds") clock with the program-time clock.
+ *
+ * The media-time clock lands in whichever segment the position falls inside.
+ * The program-time clock advances to the next segment when the position is
+ * within `tolerance` of the current segment end. The reconciled result keeps
+ * both clocks on the same segment:
+ *
+ * - Within `tolerance` of a segment end, advance to the next segment when one
+ *   exists. In the last segment there is no next segment, so the last segment
+ *   is kept (the program-time clock would otherwise match nothing).
+ * - Exactly at the end of the whole timeline (position `segmentCount *
+ *   segmentDuration`) neither clock matches a segment, so `null` is returned.
+ * - A `tolerance` of 0 disables the look-ahead: the segment the position falls
+ *   inside is selected.
+ *
+ * @param position - The current position in seconds
+ * @param segmentCount - The number of segments in the timeline
+ * @param tolerance - How close to a segment end the position may be to advance
+ * to the next segment
+ * @param segmentDuration - The duration of every segment in seconds (defaults
+ * to 10)
+ * @returns the 1-based segment number, or null when no segment matches
+ */
+export function findSegmentByTime(
+  position: number,
+  segmentCount: number,
+  tolerance: number = 0.25,
+  segmentDuration: number = 10,
+): number | null {
+  const duration = segmentCount * segmentDuration;
+  // Exactly at (or beyond) the end of the whole timeline nothing matches.
+  if (!Number.isFinite(position) || position < 0 || position >= duration) {
+    return null;
+  }
+  // The segment the position falls inside, in half-open [start, end) ranges.
+  const segment = Math.floor(position / segmentDuration) + 1;
+  // Advance to the next segment when within tolerance of a segment end,
+  // provided a next segment exists; the last segment has no successor.
+  const distanceToSegmentEnd = segment * segmentDuration - position;
+  if (
+    tolerance > 0 &&
+    distanceToSegmentEnd <= tolerance &&
+    segment < segmentCount
+  ) {
+    return segment + 1;
+  }
+  return segment;
+}
+
+/**
  * Returns first fragment whose endPdt value exceeds the given PDT, or null.
  * @param fragments - The array of candidate fragments
  * @param PDTValue - The PDT value which must be exceeded
